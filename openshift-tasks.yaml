@@ -160,7 +160,6 @@ objects:
         terminationGracePeriodSeconds: 60
     triggers:
     - imageChangeParams:
-        automatic: true
         containerNames:
         - ${APPLICATION_NAME}
         from:
@@ -172,7 +171,7 @@ parameters:
 - description: The name for the application.
   name: APPLICATION_NAME
   required: true
-  value: tasks
+  value: openshift-tasks
 - description: The name for the container image
   name: IMAGE_NAME
   required: true
