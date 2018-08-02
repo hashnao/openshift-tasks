@@ -154,9 +154,9 @@ objects:
             timeoutSeconds: 1
           resources:
             limits:
-              cpu: 500m
+              cpu: ${CPU_LIMITS}
             requests:
-              cpu: 100m
+              cpu: ${CPU_REQUESTS}
         terminationGracePeriodSeconds: 60
     triggers:
     - imageChangeParams:
@@ -201,3 +201,11 @@ parameters:
 - description: List of directories from which archives will be copied into the deployment
     folder. If unspecified, all archives in /target will be copied.
   name: ARTIFACT_DIR
+- description: The maximum amount of CPU
+  name: CPU_LIMITS
+  required: false
+  value: 500m
+- description: The minimum amount of CPU
+  name: CPU_REQUESTS
+  required: false
+  value: 100m
