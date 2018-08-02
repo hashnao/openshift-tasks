@@ -17,13 +17,23 @@ objects:
     strategy:
       jenkinsPipelineStrategy:
         jenkinsfile: |-
-          node('maven') {
-              stage 'build'
-              openshiftBuild(buildConfig: '${APPLICATION_NAME}', showBuildLogs: 'true')
-  
-              stage 'deploy'
-              openshiftDeploy(deploymentConfig: '${APPLICATION_NAME}')
-          }
+            try {
+                timeout(time: 20, unit: 'MINUTES') {
+                    node('maven') {
+                        stage('build') {
+                            openshiftBuild(buildConfig: '${APPLICATION_NAME}', showBuildLogs: 'true')
+                        }
+                        stage('deploy') {
+                            openshiftDeploy(deploymentConfig: '${APPLICATION_NAME}')
+                        }
+                    }
+                }
+            } catch (err) {
+                 echo "in catch block"
+                 echo "Caught: ${err}"
+                 currentBuild.result = 'FAILURE'
+                 throw err
+            }
       type: JenkinsPipeline
     triggers:
     - github:
