@@ -1,12 +1,8 @@
 openshift.withCluster() {
-    // path of the template to use
-    def templatePath = 'https://raw.githubusercontent.com/hashnao/openshift-tasks/master/openshift-tasks-build.yaml'
-    // name of the template that will be created
-    def templateName = 'openshift-tasks'
-    // NOTE, the "pipeline" directive/closure from the declarative pipeline syntax needs to include, or be nested outside,
-    // and "openshift" directive/closure from the OpenShift Client Plugin for Jenkins.  Otherwise, the declarative pipeline engine
-    // will not be fully engaged.
     env.NAMESPACE = openshift.project()
+    env.POM_FILE = env.BUILD_CONTEXT_DIR ? "${env.BUILD_CONTEXT_DIR}/pom.xml" : "pom.xml"
+    env.APP_NAME = "${env.JOB_NAME}".replaceAll(/-?pipeline-?/, '').replaceAll(/-?${env.NAMESPACE}-?/, '').replaceAll("/", '')
+    echo "Starting Pipeline for ${APP_NAME}..."
     def projectBase = "${env.NAMESPACE}".replaceAll(/-dev/, '')
     env.STAGE0 = "${projectBase}-dev"
     env.STAGE1 = "${projectBase}-build"
@@ -24,57 +20,50 @@ pipeline {
         timeout(time: 20, unit: 'MINUTES')
     }
     stages {
-        stage('preamble') {
+        stage('Git Checkout') {
             steps {
+                // Turn off Git's SSL cert check, uncomment if needed
+                // sh 'git config --global http.sslVerify false'
+                git url: "${SOURCE_URL}"
+            }
+        }
+        // Run Maven build, skipping tests
+        stage('Build'){
+            steps {
+                sh "mvn clean install -DskipTests=true -f ${POM_FILE}"
+            }
+        }
+        // Run Maven unit tests
+        stage('Unit Test'){
+            steps {
+                sh "mvn test -f ${POM_FILE}"
+            }
+        }
+        stage('Build Container Image'){
+            steps {
+                // Copy the resulting artifacts into common directory
+                sh """
+                  ls target/*
+                  rm -rf oc-build && mkdir -p oc-build/deployments
+                  for t in \$(echo "jar;war;ear" | tr ";" "\\n"); do
+                  cp -rfv ./target/*.\$t oc-build/deployments/ 2> /dev/null || echo "No \$t files"
+                  done
+                """
                 script {
                     openshift.withCluster() {
                         openshift.withProject("$STAGE0") {
                             echo "Using project: ${openshift.project()}"
-                        }
-                    }
-                }
-            }
-        }
-        stage('cleanup') {
-            steps {
-                script {
-                    openshift.withCluster() {
-                        openshift.withProject() {
-                            // delete everything with this template label
-                            openshift.selector("all", [ template : templateName ]).delete()
-                            // delete any secrets with this template label
-                            if (openshift.selector("secrets", templateName).exists()) {
-                                openshift.selector("secrets", templateName).delete()
-                            }
-                        }
-                    }
-                } // script
-            } // steps
-        } // stage
-       stage('build') {
-            steps {
-                script {
-                    openshift.withCluster() {
-                        openshift.withProject() {
-                            // output the build logs to the Jenkins console. logs()
-                            // would run `oc logs bc/ruby-hello-world`, but that might only
-                            // output a partial log if the build is in progress. Instead, we will
-                            // pass '-f' to `oc logs` to follow the build until it terminates.
-                            // Arguments to logs get passed Directly on to the oc command line.
-                            def result = openshift.selector("bc", templateName).logs('-f')
-                            // You can even see exactly what oc command was executed.
-                            echo "Logs executed: ${result.actions[0].cmd}"
-                            //
-                            def builds = openshift.selector("bc", templateName).related('builds')
+                            openshift.selector("bc", "${APP_NAME}").startBuild("--from-dir=oc-build").logs("-f")
+                            def builds = openshift.selector("bc", "${APP_NAME}").related('builds')
                             builds.untilEach(1) {
                                 return (it.object().status.phase == "Complete")
                             }
                         }
                     }
-                } // script
-            } // steps
-        } // stage
-        stage('tag to dev') {
+                }
+            }
+        }
+        stage('Promote from Build to Dev') {
             steps {
                 script {
                     openshift.withCluster() {
@@ -88,23 +77,23 @@ pipeline {
                 } // script
             } // steps
         } // stage
-        stage('deploy to dev') {
+        stage ('Verify Deployment to Dev') {
             steps {
                 script {
                     openshift.withCluster() {
                         openshift.withProject("${STAGE1}") {
-                            def deploy = openshift.selector("dc", templateName)
-                            deploy.rollout().latest()
-                            deploy.rollout().status('-w')
-                            deploy.related('pods').untilEach(1) {
-                                return (it.object().status.phase == "Running")
+                            def dcObj = openshift.selector("dc", env.APP_NAME).object()
+                            def podSelector = openshift.selector('pod', [deployment: "${APP_NAME}-${dcObj.status.latestVersion}"])
+                            podSelector.untilEach {
+                                echo "pod: ${it.name()}"
+                                return it.object().status.containerStatuses[0].ready
                             }
                         }
                     }
                 } // script
             } // steps
         } // stage
-        stage('tag to prod') {
+        stage('Promote from Dev to Prod') {
             steps {
                 script {
                     openshift.withCluster() {
@@ -115,17 +104,16 @@ pipeline {
                 } // script
             } // steps
         } // stage
-        stage('deploy to prod') {
+        stage ('Verify Deployment to Prod') {
             steps {
                 script {
                     openshift.withCluster() {
                         openshift.withProject("${STAGE2}") {
-                            def deploy = openshift.selector("dc", templateName)
-                            deploy.rollout().latest()
-                            deploy.rollout().status('-w')
-                            deploy.related('pods').untilEach(1) {
-                                return (it.object().status.phase == "Running")
-                            }
+                            def dcObj = openshift.selector("dc", env.APP_NAME).object()
+                            def podSelector = openshift.selector('pod', [deployment: "${APP_NAME}-${dcObj.status.latestVersion}"])
+                            podSelector.untilEach {
+                                echo "pod: ${it.name()}"
+                                return it.object().status.containerStatuses[0].ready
                         }
                     }
                 } // script

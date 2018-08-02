@@ -16,8 +16,13 @@ objects:
   metadata:
     labels:
       application: ${APPLICATION_NAME}
-    name: openshift-tasks-pipeline
+    name: ${APPLICATION_NAME}-pipeline
   spec:
+    source:
+      type: Git
+      git:
+        ref: ${SOURCE_REF}
+        uri: ${SOURCE_URL}
     triggers:
     - type: GitHub
       github:
@@ -27,7 +32,9 @@ objects:
       type: JenkinsPipeline
       jenkinsPipelineStrategy:
         jenkinsfilePath: ${PIPELINE_SCRIPT}
-        env: {}
+        env:
+        - name: SOURCE_URL
+          value: "${SOURCE_URL}"
 - apiVersion: v1
   kind: BuildConfig
   metadata:
@@ -40,10 +47,8 @@ objects:
         kind: ImageStreamTag
         name: ${APPLICATION_NAME}:latest
     source:
-      git:
-        ref: ${SOURCE_REF}
-        uri: ${SOURCE_URL}
-      type: Git
+      type: Binary
+      binary: {}
     strategy:
       sourceStrategy:
         env:
