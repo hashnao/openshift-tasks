@@ -7,3 +7,9 @@ items:
     name: tasks-dev
     creationTimestam: null
   displayName: OpenShift Tasks - Dev
+- kind: ProjectRequest
+  apiVersion: v1
+  metadata:
+    name: tasks-prod
+    creationTimestam: null
+  displayName: OpenShift Tasks - Production

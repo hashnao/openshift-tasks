@@ -67,12 +67,9 @@ objects:
           namespace: ${IMAGE_STREAM_NAMESPACE}
       type: Source
     triggers:
-    - github:
-        secret: kJZLvfQr3hZg
-      type: GitHub
-    - generic:
-        secret: kJZLvfQr3hZg
-      type: Generic
+    - type: GitHub
+      github:
+        secret: ${GITHUB_WEBHOOK_SECRET}
     - imageChange: {}
       type: ImageChange
     - type: ConfigChange
@@ -201,6 +198,11 @@ parameters:
 - description: List of directories from which archives will be copied into the deployment
     folder. If unspecified, all archives in /target will be copied.
   name: ARTIFACT_DIR
+- description: GitHub trigger secret
+  from: '[a-zA-Z0-9]{8}'
+  generate: expression
+  name: GITHUB_WEBHOOK_SECRET
+  required: true
 - description: The maximum amount of CPU
   name: CPU_LIMITS
   required: false
