@@ -10,10 +10,10 @@ openshift.withCluster() {
 }
 pipeline {
     agent {
-      node {
-        // spin up a slave pod to run this build on
-        label 'maven'
-      }
+        node {
+            // spin up a slave pod to run this build on
+            label 'maven'
+        }
     }
     options {
         // set a timeout of 20 minutes for this pipeline
@@ -60,18 +60,15 @@ pipeline {
                             }
                         }
                     }
-                }
-            }
-        }
+                } // script
+            } // steps
+        } // stage
         stage('Promote from Build to Dev') {
             steps {
                 script {
                     openshift.withCluster() {
                         openshift.withProject() {
-                            // if everything else succeeded, tag the ${templateName}:latest image as ${templateName}-prod:latest
-                            // a pipeline build config for the development environment can watch for the ${templateName}-prod:latest
-                            // image to change and then deploy it to development the environment
-                            openshift.tag("${templateName}:latest", "${env.STAGE1}/${templateName}:latest")
+                            openshift.tag("${env.APP_NAME}:latest", "${env.STAGE1}/${env.APP_NAME}:latest")
                         }
                     }
                 } // script
@@ -98,7 +95,7 @@ pipeline {
                 script {
                     openshift.withCluster() {
                         openshift.withProject() {
-                            openshift.tag("${templateName}:latest", "${env.STAGE2}/${templateName}:latest")
+                            openshift.tag("${env.APP_NAME}:latest", "${env.STAGE2}/${env.APP_NAME}:latest")
                         }
                     }
                 } // script
@@ -114,6 +111,7 @@ pipeline {
                             podSelector.untilEach {
                                 echo "pod: ${it.name()}"
                                 return it.object().status.containerStatuses[0].ready
+                            }
                         }
                     }
                 } // script
