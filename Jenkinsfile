@@ -9,12 +9,13 @@ openshift.withCluster() {
     env.NAMESPACE = openshift.project()
     def projectBase = "${env.NAMESPACE}".replaceAll(/-dev/, '')
     env.STAGE0 = "${projectBase}-dev"
-    env.STAGE1 = "${projectBase}-prod"
+    env.STAGE1 = "${projectBase}-build"
+    env.STAGE2 = "${projectBase}-prod"
 }
 pipeline {
     agent {
       node {
-        // spin up a node.js slave pod to run this build on
+        // spin up a slave pod to run this build on
         label 'maven'
       }
     }
@@ -73,11 +74,25 @@ pipeline {
                 } // script
             } // steps
         } // stage
-        stage('deploy to dev') {
+        stage('tag to dev') {
             steps {
                 script {
                     openshift.withCluster() {
                         openshift.withProject() {
+                            // if everything else succeeded, tag the ${templateName}:latest image as ${templateName}-prod:latest
+                            // a pipeline build config for the development environment can watch for the ${templateName}-prod:latest
+                            // image to change and then deploy it to development the environment
+                            openshift.tag("${templateName}:latest", "${env.STAGE1}/${templateName}:latest")
+                        }
+                    }
+                } // script
+            } // steps
+        } // stage
+        stage('deploy to dev') {
+            steps {
+                script {
+                    openshift.withCluster() {
+                        openshift.withProject("${STAGE1}") {
                             def deploy = openshift.selector("dc", templateName)
                             deploy.rollout().latest()
                             deploy.rollout().status('-w')
@@ -89,15 +104,12 @@ pipeline {
                 } // script
             } // steps
         } // stage
-        stage('tag') {
+        stage('tag to prod') {
             steps {
                 script {
                     openshift.withCluster() {
                         openshift.withProject() {
-                            // if everything else succeeded, tag the ${templateName}:latest image as ${templateName}-prod:latest
-                            // a pipeline build config for the productin environment can watch for the ${templateName}-prod:latest
-                            // image to change and then deploy it to the productin environment
-                            openshift.tag("${templateName}:latest", "${env.STAGE1}/${templateName}:latest")
+                            openshift.tag("${templateName}:latest", "${env.STAGE2}/${templateName}:latest")
                         }
                     }
                 } // script
@@ -107,7 +119,7 @@ pipeline {
             steps {
                 script {
                     openshift.withCluster() {
-                        openshift.withProject() {
+                        openshift.withProject("${STAGE2}") {
                             def deploy = openshift.selector("dc", templateName)
                             deploy.rollout().latest()
                             deploy.rollout().status('-w')

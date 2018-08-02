@@ -4,6 +4,12 @@ items:
 - kind: ProjectRequest
   apiVersion: v1
   metadata:
+    name: tasks-build
+    creationTimestam: null
+  displayName: OpenShift Tasks - Build
+- kind: ProjectRequest
+  apiVersion: v1
+  metadata:
     name: tasks-dev
     creationTimestam: null
   displayName: OpenShift Tasks - Dev
