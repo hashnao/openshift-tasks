@@ -22,6 +22,12 @@ pipeline {
     devTag = "${version}-${BUILD_NUMBER}"
     prodTag = "${version}"
     PATH = "$PATH:${MAVEN_PATH}"
+    APP_NAME = "${APP_NAME}"
+    APP_IMAGE = "${APP_IMAGE}"
+    GIT_SOURCE_URL = "${GIT_SOURCE_URL}"
+    GIT_SOURCE_REF = "${GIT_SOURCE_REF}"
+    MAVEN_SLAVE_IMAGE = "${MAVEN_SLAVE_IMAGE}"
+    MAVEN_PATH = "${MAVEN_PATH}"
     NEXUS_URL = "${NEXUS_URL}"
     NEXUS_URI_MAVEN = "${NEXUS_URI_MAVEN}"
     NEXUS_URI_PUBLIC = "${NEXUS_URI_PUBLIC}"
@@ -30,7 +36,7 @@ pipeline {
     NEXUS_PASSWORD = "${NEXUS_PASSWORD}"
     SONAR_URL = "${SONAR_URL}"
     REGISTRY_URL = "${REGISTRY_URL}"
-    TOKEN = "/run/secrets/kubernetes.io/serviceaccount/token"
+    TOKEN = readFile("/run/secrets/kubernetes.io/serviceaccount/token").trim()
   }
   options {
     timeout(time: 30, unit: 'MINUTES')
@@ -38,14 +44,11 @@ pipeline {
   stages {
     stage('Variable Check') {
       steps {
-        echo "MAVEN_SLAVE_IMAGE: ${MAVEN_SLAVE_IMAGE}"
         echo "mvnCmd: ${mvnCmd}"
         echo "version: ${version}"
         echo "devTag: ${devTag}"
         echo "prodTag: ${prodTag}"
-        echo "NEXUS_URL: ${NEXUS_URL}"
-        echo "NEXUS_REGISTRY_URL: ${NEXUS_REGISTRY_URL}"
-        echo "SONAR_URL: ${SONAR_URL}"
+        echo "MAVEN_PATH: ${MAVEN_PATH}"
         sh "printenv"
         sh "skopeo --version"
         sh "oc version"
@@ -135,7 +138,7 @@ pipeline {
       steps {
         echo "Archiving the container image to the nexus registry."
         script {
-          sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:\$(cat ${TOKEN}) --dest-creds ${NEXUS_USER}:${NEXUS_PASSWORD} ${REGISTRY_URL}/${OPENSHIFT_BUILD_NAMESPACE}/${APP_NAME}:${devTag} ${NEXUS_REGISTRY_URL}/${APP_NAME}:${devTag}"
+          sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:${TOKEN} --dest-creds ${NEXUS_USER}:${NEXUS_PASSWORD} ${REGISTRY_URL}/${OPENSHIFT_BUILD_NAMESPACE}/${APP_NAME}:${devTag} ${NEXUS_REGISTRY_URL}/${APP_NAME}:${devTag}"
         }
       }
     }
