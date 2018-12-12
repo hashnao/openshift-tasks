@@ -11,7 +11,7 @@ objects:
   metadata:
     annotations: {}
     labels:
-      name: ${APP_NAME}-pipeline-jenkinsfilepath
+      name: ${APP_NAME}-pipeline
     name: ${APP_NAME}-pipeline-jenkinsfilepath
   spec:
     source:

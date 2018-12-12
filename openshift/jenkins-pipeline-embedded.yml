@@ -2,17 +2,17 @@ apiVersion: v1
 kind: Template
 labels:
   template: ${APP_NAME}-pipeline
-message: Usage oc process -f jenkins-pipeline-jenkinsfilepath.yml -p GUID=$GUID | oc create -f -
+message: Usage oc process -f jenkins-pipeline-embedded.yml -p GUID=$GUID | oc create -f -
 metadata:
-  name: ${APP_NAME}-pipeline-jenkinsfilepath
+  name: ${APP_NAME}-pipeline-embedded
 objects:
 - apiVersion: v1
   kind: BuildConfig
   metadata:
     annotations: {}
     labels:
-      name: ${APP_NAME}-pipeline-jenkinsfilepath
-    name: ${APP_NAME}-pipeline-jenkinsfilepath
+      name: ${APP_NAME}-pipeline
+    name: ${APP_NAME}-pipeline-embedded
   spec:
     strategy:
       type: JenkinsPipeline
@@ -79,8 +79,7 @@ objects:
               mvnCmd = "mvn -s ./nexus_settings.xml"
               // version can be used only if Jenkinsfile is referenced to git repositories.
               // because it couldn't get the pom.xml when the Jenkinsfile embedded in the BuildConfig.
-              // version = getVersionFromPom("./pom.xml")
-              version = "1.0"
+              version = getVersionFromPom("./pom.xml")
               devTag = "${version}-${BUILD_NUMBER}"
               prodTag = "${version}"
               PATH = "$PATH:${MAVEN_PATH}"
@@ -94,11 +93,12 @@ objects:
               NEXUS_URI_MAVEN = "${NEXUS_URI_MAVEN}"
               NEXUS_URI_PUBLIC = "${NEXUS_URI_PUBLIC}"
               NEXUS_REGISTRY_URL = "${NEXUS_REGISTRY_URL}"
-              NEXUS_USER = "${NEXUS_USER}"
-              NEXUS_PASSWORD = "${NEXUS_PASSWORD}"
+              // Create Jenkins credentials ID with username and password for Nexus and Set the ID.
+              NEXUS_CREDENTIALS = credentials("nexus")
               SONAR_URL = "${SONAR_URL}"
               REGISTRY_URL = "${REGISTRY_URL}"
-              TOKEN = readFile("/run/secrets/kubernetes.io/serviceaccount/token").trim()
+              JENKINS_DEFAULT_CREDENTIALS_ID = "1a12dfa4-7fc5-47a7-aa17-cc56572a41c7"
+              TOKEN = credentials("${JENKINS_DEFAULT_CREDENTIALS_ID}")
             }
             options {
               timeout(time: 30, unit: 'MINUTES')
@@ -106,6 +106,7 @@ objects:
             stages {
               stage('Variable Check') {
                 steps {
+                  echo "mvnCmd: ${mvnCmd}"
                   echo "version: ${version}"
                   echo "devTag: ${devTag}"
                   echo "prodTag: ${prodTag}"
@@ -119,7 +120,7 @@ objects:
               stage('Check Out Source Code') {
                 steps {
                   git url: "${GIT_SOURCE_URL}", branch: "${GIT_SOURCE_REF}"
-                  sh "sed -i -e 's|NEXUS_URL|${NEXUS_URL}|' -e 's|NEXUS_URI_PUBLIC|${NEXUS_URI_PUBLIC}|' -e 's|NEXUS_USER|${NEXUS_USER}|' -e 's|NEXUS_PASSWORD|${NEXUS_PASSWORD}|' ./nexus_settings.xml"
+                  sh "sed -i -e 's|NEXUS_URL|${NEXUS_URL}|' -e 's|NEXUS_URI_PUBLIC|${NEXUS_URI_PUBLIC}|' -e 's|NEXUS_USER|${NEXUS_CREDENTIALS_USR}|' -e 's|NEXUS_PASSWORD|${NEXUS_CREDENTIALS_PSW}|' ./nexus_settings.xml"
                   sh "cat ./nexus_settings.xml"
                 }
               }
@@ -164,11 +165,12 @@ objects:
                             "--to=${APP_NAME}:latest")
                           // Print out information about the objects created by newBuild
                           echo "newBuild created: ${nb.count()} objects: ${nb.names()}"
+                        } else {
+                          // Start an image build
+                          openshift.selector("bc", "${APP_NAME}").startBuild().logs("-f")
                         }
-                        // Define nb again as the nb definition above can be applied only within the if statement.
-                        def nb = openshift.selector("bc", "${APP_NAME}")
-                        nb.startBuild()
                         // Filter non-BuildConfig objects and create selector which will find builds related to the BuildConfig
+                        def nb = openshift.selector("bc", "${APP_NAME}")
                         def buildSelector = nb.narrow("bc").related("builds")
                         // Throw exception after 5 minutes
                         timeout(5) {
@@ -177,16 +179,17 @@ objects:
                           }
                         }
                         echo "Builds have been completed: ${buildSelector.names()}"
-                        // Print a list of the builds which have been created
-                        echo "Build logs for ${buildSelector.names()}:"
-                        // Find the bc again, and ask for its logs
-                        def result = nb.narrow("bc").logs()
-                        // Each high-level operation exposes stout/stderr/status of oc actions that composed
-                        echo "Result of logs operation:"
-                        echo "  status: ${result.status}"
-                        echo "  stderr: ${result.err}"
-                        echo "  number of actions to fulfill: ${result.actions.size()}"
-                        echo "  first action executed: ${result.actions[0].cmd}"
+                      }
+                    }
+                  }
+                }
+              }
+              stage('Promote Image') {
+                steps {
+                  echo "Tagging the container image with the build number of ${devTag}."
+                  script {
+                    openshift.withCluster() {
+                      openshift.withProject() {
                         // Tag the ${APP_NAME}:latest image as ${APP_NAME}:${devTag}
                         openshift.tag("${APP_NAME}:latest", "${APP_NAME}:${devTag}")
                       }
@@ -198,7 +201,7 @@ objects:
                 steps {
                   echo "Archiving the container image to the nexus registry."
                   script {
-                    sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:${TOKEN} --dest-creds ${NEXUS_USER}:${NEXUS_PASSWORD} ${REGISTRY_URL}/${OPENSHIFT_BUILD_NAMESPACE}/${APP_NAME}:${devTag} ${NEXUS_REGISTRY_URL}/${APP_NAME}:${devTag}"
+                    sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:${TOKEN} --dest-creds ${NEXUS_CREDENTIALS} ${REGISTRY_URL}/${OPENSHIFT_BUILD_NAMESPACE}/${APP_NAME}:${devTag} ${NEXUS_REGISTRY_URL}/${APP_NAME}:${devTag}"
                   }
                 }
               }
